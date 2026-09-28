@@ -7,6 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![MCP](https://img.shields.io/badge/MCP-compatible-green.svg)](https://modelcontextprotocol.io/)
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fmpt3ch%2Frobinhood-mcp.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Fmpt3ch%2Frobinhood-mcp?ref=badge_shield)
 
 A read-only MCP server for Robinhood portfolio research. Wraps [robin_stocks](https://github.com/jmfernandes/robin_stocks) to give AI assistants access to your portfolio data for analysis.
 
@@ -276,6 +277,9 @@ robinhood-mcp
 ## License
 
 MIT
+
+
+[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fmpt3ch%2Frobinhood-mcp.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fmpt3ch%2Frobinhood-mcp?ref=badge_large)
 
 ## Disclaimer
 
