@@ -347,6 +347,219 @@ class TestPatchedValidationWorkflow:
 
         assert mock_request_post.call_count == 3
 
+    @patch("robinhood_mcp.auth.request_post")
+    def test_raises_on_missing_inquiry_id(self, mock_request_post: MagicMock):
+        """Should raise AuthenticationError when user_machine response has no ID."""
+        mock_request_post.return_value = {}
+        with pytest.raises(AuthenticationError) as exc_info:
+            _patched_validate_sherrif_id("device-token", "workflow-id")
+        assert "missing inquiry ID" in str(exc_info.value)
+
+    @patch("robinhood_mcp.auth.request_get")
+    @patch("robinhood_mcp.auth.request_post")
+    def test_raises_on_missing_inquiry_details(
+        self, mock_request_post: MagicMock, mock_request_get: MagicMock
+    ):
+        """Should raise AuthenticationError when inquiries response is not a dict."""
+        mock_request_post.return_value = {"id": "inq-123"}
+        mock_request_get.return_value = None
+        with pytest.raises(AuthenticationError) as exc_info:
+            _patched_validate_sherrif_id("device-token", "workflow-id")
+        assert "missing inquiry details" in str(exc_info.value)
+
+    @patch("robinhood_mcp.auth.request_get")
+    @patch("robinhood_mcp.auth.request_post")
+    def test_raises_on_missing_challenge_id(
+        self, mock_request_post: MagicMock, mock_request_get: MagicMock
+    ):
+        """Should raise AuthenticationError when context is empty / challenge ID is missing."""
+        mock_request_post.return_value = {"id": "inq-123"}
+        mock_request_get.return_value = {"context": None}
+        with pytest.raises(AuthenticationError) as exc_info:
+            _patched_validate_sherrif_id("device-token", "workflow-id")
+        assert "missing sheriff challenge ID" in str(exc_info.value)
+
+    @patch("robinhood_mcp.auth.time.sleep", return_value=None)
+    @patch("robinhood_mcp.auth.time.time", side_effect=range(0, 500, 5))
+    @patch("robinhood_mcp.auth.request_get")
+    @patch("robinhood_mcp.auth.request_post")
+    def test_totp_challenge_success(
+        self,
+        mock_request_post: MagicMock,
+        mock_request_get: MagicMock,
+        _mock_time: MagicMock,
+        _mock_sleep: MagicMock,
+    ):
+        """Should successfully approve login if TOTP is validated and workflow is approved."""
+        mock_request_post.side_effect = [
+            {"id": "inq-123"},
+            {"status": "validated"},
+            {"context": {"result": "workflow_status_approved"}},
+        ]
+        mock_request_get.return_value = {"context": {"sheriff_challenge": {"id": "challenge-123"}}}
+
+        _patched_validate_sherrif_id("device-token", "workflow-id", mfa_code="123456")
+
+        mock_request_post.assert_any_call(
+            url="https://api.robinhood.com/challenge/challenge-123/respond/",
+            payload={"response": "123456"},
+            json=True,
+        )
+
+    @patch("robinhood_mcp.auth.request_get")
+    @patch("robinhood_mcp.auth.request_post")
+    def test_totp_challenge_empty_response_raises(
+        self, mock_request_post: MagicMock, mock_request_get: MagicMock
+    ):
+        """Should raise AuthenticationError when TOTP challenge POST returns None."""
+        mock_request_post.side_effect = [
+            {"id": "inq-123"},
+            None,
+        ]
+        mock_request_get.return_value = {"context": {"sheriff_challenge": {"id": "challenge-123"}}}
+
+        with pytest.raises(AuthenticationError) as exc_info:
+            _patched_validate_sherrif_id("device-token", "workflow-id", mfa_code="123456")
+        assert "TOTP challenge response was empty" in str(exc_info.value)
+
+    @patch("robinhood_mcp.auth.request_get")
+    @patch("robinhood_mcp.auth.request_post")
+    def test_totp_challenge_disapproved_raises(
+        self, mock_request_post: MagicMock, mock_request_get: MagicMock
+    ):
+        """Should raise AuthenticationError when TOTP validated but workflow disapproved."""
+        mock_request_post.side_effect = [
+            {"id": "inq-123"},
+            {"status": "validated"},
+            {"context": {"result": "workflow_status_rejected"}},
+        ]
+        mock_request_get.return_value = {"context": {"sheriff_challenge": {"id": "challenge-123"}}}
+
+        with pytest.raises(AuthenticationError) as exc_info:
+            _patched_validate_sherrif_id("device-token", "workflow-id", mfa_code="123456")
+        assert "TOTP validated but workflow not approved: workflow_status_rejected" in str(
+            exc_info.value
+        )
+
+    @patch("robinhood_mcp.auth.time.sleep", return_value=None)
+    @patch("robinhood_mcp.auth.time.time", side_effect=range(0, 500, 5))
+    @patch("robinhood_mcp.auth.request_get")
+    @patch("robinhood_mcp.auth.request_post")
+    def test_totp_challenge_timeout_raises(
+        self,
+        mock_request_post: MagicMock,
+        mock_request_get: MagicMock,
+        _mock_time: MagicMock,
+        _mock_sleep: MagicMock,
+    ):
+        """Should raise AuthenticationError if TOTP validated but finalization times out."""
+        mock_request_post.side_effect = [
+            {"id": "inq-123"},
+            {"status": "validated"},
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ]
+        mock_request_get.return_value = {"context": {"sheriff_challenge": {"id": "challenge-123"}}}
+
+        with pytest.raises(AuthenticationError) as exc_info:
+            _patched_validate_sherrif_id("device-token", "workflow-id", mfa_code="123456")
+        assert "TOTP validated but workflow finalization timed out" in str(exc_info.value)
+
+    @patch("robinhood_mcp.auth.time.sleep", return_value=None)
+    @patch("robinhood_mcp.auth.time.time", side_effect=range(0, 500, 5))
+    @patch("robinhood_mcp.auth.request_get")
+    @patch("robinhood_mcp.auth.request_post")
+    def test_totp_challenge_not_validated_falls_back_to_polling(
+        self,
+        mock_request_post: MagicMock,
+        mock_request_get: MagicMock,
+        _mock_time: MagicMock,
+        _mock_sleep: MagicMock,
+    ):
+        """Should fall back to push-notification polling if TOTP is not validated."""
+        mock_request_post.side_effect = [
+            {"id": "inq-123"},
+            {"status": "pending"},
+            {"context": {"result": "workflow_status_approved"}},
+        ]
+        mock_request_get.side_effect = [
+            {"context": {"sheriff_challenge": {"id": "challenge-123"}}},
+            {"challenge_status": "validated"},
+        ]
+
+        _patched_validate_sherrif_id("device-token", "workflow-id", mfa_code="123456")
+
+        mock_request_post.assert_any_call(
+            url="https://api.robinhood.com/challenge/challenge-123/respond/",
+            payload={"response": "123456"},
+            json=True,
+        )
+        mock_request_get.assert_any_call(
+            url="https://api.robinhood.com/push/challenge-123/get_prompts_status/"
+        )
+
+    @patch("robinhood_mcp.auth.time.sleep", return_value=None)
+    @patch("robinhood_mcp.auth.time.time", side_effect=range(0, 500, 5))
+    @patch("robinhood_mcp.auth.request_get")
+    @patch("robinhood_mcp.auth.request_post")
+    def test_push_approval_timeout_raises(
+        self,
+        mock_request_post: MagicMock,
+        mock_request_get: MagicMock,
+        _mock_time: MagicMock,
+        _mock_sleep: MagicMock,
+    ):
+        """Should raise AuthenticationError when push approval times out."""
+        mock_request_post.side_effect = [
+            {"id": "inq-123"},
+        ]
+        mock_request_get.side_effect = [
+            {"context": {"sheriff_challenge": {"id": "challenge-123"}}},
+        ] + [{"challenge_status": "pending"}] * 20
+
+        with pytest.raises(AuthenticationError) as exc_info:
+            _patched_validate_sherrif_id("device-token", "workflow-id")
+        assert "Login timed out" in str(exc_info.value)
+
+    @patch("robinhood_mcp.auth.time.sleep", return_value=None)
+    @patch("robinhood_mcp.auth.time.time", side_effect=range(0, 500, 5))
+    @patch("robinhood_mcp.auth.request_get")
+    @patch("robinhood_mcp.auth.request_post")
+    def test_push_approval_disapproved_raises(
+        self,
+        mock_request_post: MagicMock,
+        mock_request_get: MagicMock,
+        _mock_time: MagicMock,
+        _mock_sleep: MagicMock,
+    ):
+        """Should raise AuthenticationError if push approved but workflow disapproved."""
+        mock_request_post.side_effect = [
+            {"id": "inq-123"},
+            {"context": {"result": "workflow_status_rejected"}},
+        ]
+        mock_request_get.side_effect = [
+            {"context": {"sheriff_challenge": {"id": "challenge-123"}}},
+            {"challenge_status": "validated"},
+        ]
+
+        with pytest.raises(AuthenticationError) as exc_info:
+            _patched_validate_sherrif_id("device-token", "workflow-id")
+        assert "Challenge validated but workflow not approved: workflow_status_rejected" in str(
+            exc_info.value
+        )
+
 
 class TestApprovalTimeout:
     """Tests for the ROBINHOOD_APPROVAL_TIMEOUT env var override."""

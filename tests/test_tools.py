@@ -415,6 +415,58 @@ class TestGetPositions:
         mock_symbol.assert_not_called()
         mock_get_quote.assert_not_called()
 
+    @patch("robinhood_mcp.tools.get_quote")
+    @patch("robinhood_mcp.tools.rh.stocks.get_symbol_by_url")
+    @patch("robinhood_mcp.tools.rh.account.get_open_stock_positions")
+    def test_account_number_skips_incomplete_positions(
+        self,
+        mock_open_positions: MagicMock,
+        mock_symbol: MagicMock,
+        mock_get_quote: MagicMock,
+    ):
+        """Should skip rows with incomplete data returned by open-stock-position API."""
+        mock_open_positions.return_value = [
+            {
+                "instrument": "https://instrument/hims/",
+                "quantity": None,
+                "average_buy_price": "20.00",
+            },
+            {
+                "instrument": "https://instrument/aapl/",
+                "quantity": "10.00",
+                "average_buy_price": None,
+            },
+        ]
+        mock_symbol.side_effect = ["HIMS", "AAPL"]
+        mock_get_quote.side_effect = [
+            {"last_trade_price": "21.50"},
+            {"last_trade_price": None},
+        ]
+
+        assert get_positions(account_number="IRA123") == {}
+
+    @patch("robinhood_mcp.tools.get_quote")
+    @patch("robinhood_mcp.tools.rh.stocks.get_symbol_by_url")
+    @patch("robinhood_mcp.tools.rh.account.get_open_stock_positions")
+    def test_account_number_skips_invalid_numeric_positions(
+        self,
+        mock_open_positions: MagicMock,
+        mock_symbol: MagicMock,
+        mock_get_quote: MagicMock,
+    ):
+        """Should skip rows with invalid numeric values returned by open-stock-position API."""
+        mock_open_positions.return_value = [
+            {
+                "instrument": "https://instrument/hims/",
+                "quantity": "abc",
+                "average_buy_price": "20.00",
+            }
+        ]
+        mock_symbol.return_value = "HIMS"
+        mock_get_quote.return_value = {"last_trade_price": "21.50"}
+
+        assert get_positions(account_number="IRA123") == {}
+
 
 class TestGetPosition:
     """Tests for get_position function."""
@@ -572,6 +624,54 @@ class TestGetPosition:
 
         assert result == {"symbol": "HIMS", "held": False}
         mock_get_quote.assert_not_called()
+
+    @patch("robinhood_mcp.tools.get_quote")
+    @patch("robinhood_mcp.tools.rh.account.get_open_stock_positions")
+    @patch("robinhood_mcp.tools.rh.stocks.get_instruments_by_symbols")
+    def test_raises_on_incomplete_position_data(
+        self,
+        mock_get_instruments: MagicMock,
+        mock_open_positions: MagicMock,
+        mock_get_quote: MagicMock,
+    ):
+        """Should raise RobinhoodError when single position has incomplete data."""
+        mock_get_instruments.return_value = [{"url": "https://instrument/hims/"}]
+        mock_open_positions.return_value = [
+            {
+                "instrument": "https://instrument/hims/",
+                "quantity": None,
+                "average_buy_price": "20.00",
+            }
+        ]
+        mock_get_quote.return_value = {"last_trade_price": "21.50"}
+
+        with pytest.raises(RobinhoodError) as exc_info:
+            get_position("HIMS")
+        assert "Incomplete position data" in str(exc_info.value)
+
+    @patch("robinhood_mcp.tools.get_quote")
+    @patch("robinhood_mcp.tools.rh.account.get_open_stock_positions")
+    @patch("robinhood_mcp.tools.rh.stocks.get_instruments_by_symbols")
+    def test_raises_on_invalid_numeric_position_data(
+        self,
+        mock_get_instruments: MagicMock,
+        mock_open_positions: MagicMock,
+        mock_get_quote: MagicMock,
+    ):
+        """Should raise RobinhoodError when single position has invalid numeric values."""
+        mock_get_instruments.return_value = [{"url": "https://instrument/hims/"}]
+        mock_open_positions.return_value = [
+            {
+                "instrument": "https://instrument/hims/",
+                "quantity": "abc",
+                "average_buy_price": "20.00",
+            }
+        ]
+        mock_get_quote.return_value = {"last_trade_price": "21.50"}
+
+        with pytest.raises(RobinhoodError) as exc_info:
+            get_position("HIMS")
+        assert "Invalid numeric position data" in str(exc_info.value)
 
 
 class TestGetQuote:
