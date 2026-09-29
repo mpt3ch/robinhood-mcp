@@ -415,6 +415,73 @@ class TestGetPositions:
         mock_symbol.assert_not_called()
         mock_get_quote.assert_not_called()
 
+    @patch(
+        "robinhood_mcp.tools.time.monotonic",
+        side_effect=[100.0, 100.0, 100.0, 101.0, 101.0, 101.0, 102.0, 103.0],
+    )
+    @patch("robinhood_mcp.tools.get_quote")
+    @patch("robinhood_mcp.tools.rh.stocks.get_symbol_by_url")
+    @patch("robinhood_mcp.tools.rh.account.get_open_stock_positions")
+    @patch("robinhood_mcp.tools.rh.account.build_holdings")
+    def test_cache_isolated_between_default_and_account_number(
+        self,
+        mock_build_holdings: MagicMock,
+        mock_open_positions: MagicMock,
+        mock_symbol: MagicMock,
+        mock_get_quote: MagicMock,
+        _mock_monotonic: MagicMock,
+    ):
+        """Should keep default-account and account-specific caches independent."""
+        mock_build_holdings.return_value = {
+            "AAPL": {
+                "quantity": "3",
+                "average_buy_price": "150.00",
+                "price": "175.00",
+                "equity": "525.00",
+                "percent_change": "16.67",
+                "equity_change": "75.00",
+            }
+        }
+        mock_open_positions.return_value = [
+            {
+                "instrument": "https://instrument/hims/",
+                "quantity": "10.00000000",
+                "average_buy_price": "20.00",
+            }
+        ]
+        mock_symbol.return_value = "HIMS"
+        mock_get_quote.return_value = {"last_trade_price": "21.50"}
+
+        default_first = get_positions()
+        account_first = get_positions(account_number="IRA123")
+        account_second = get_positions(account_number="IRA123")
+        default_second = get_positions()
+
+        assert default_first == default_second == {
+            "AAPL": {
+                "quantity": "3",
+                "average_buy_price": "150.00",
+                "price": "175.00",
+                "equity": "525.00",
+                "percent_change": "16.67",
+                "equity_change": "75.00",
+            }
+        }
+        assert account_first == account_second == {
+            "HIMS": {
+                "price": "21.50",
+                "quantity": "10.00000000",
+                "average_buy_price": "20.00",
+                "equity": "215.00",
+                "percent_change": "7.50",
+                "equity_change": "15.00",
+            }
+        }
+        assert mock_build_holdings.call_count == 1
+        mock_open_positions.assert_called_once_with(account_number="IRA123")
+        mock_symbol.assert_called_once_with("https://instrument/hims/")
+        mock_get_quote.assert_called_once_with("HIMS")
+
 
 class TestGetPosition:
     """Tests for get_position function."""
