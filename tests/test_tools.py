@@ -457,26 +457,34 @@ class TestGetPositions:
         account_second = get_positions(account_number="IRA123")
         default_second = get_positions()
 
-        assert default_first == default_second == {
-            "AAPL": {
-                "quantity": "3",
-                "average_buy_price": "150.00",
-                "price": "175.00",
-                "equity": "525.00",
-                "percent_change": "16.67",
-                "equity_change": "75.00",
+        assert (
+            default_first
+            == default_second
+            == {
+                "AAPL": {
+                    "quantity": "3",
+                    "average_buy_price": "150.00",
+                    "price": "175.00",
+                    "equity": "525.00",
+                    "percent_change": "16.67",
+                    "equity_change": "75.00",
+                }
             }
-        }
-        assert account_first == account_second == {
-            "HIMS": {
-                "price": "21.50",
-                "quantity": "10.00000000",
-                "average_buy_price": "20.00",
-                "equity": "215.00",
-                "percent_change": "7.50",
-                "equity_change": "15.00",
+        )
+        assert (
+            account_first
+            == account_second
+            == {
+                "HIMS": {
+                    "price": "21.50",
+                    "quantity": "10.00000000",
+                    "average_buy_price": "20.00",
+                    "equity": "215.00",
+                    "percent_change": "7.50",
+                    "equity_change": "15.00",
+                }
             }
-        }
+        )
         assert mock_build_holdings.call_count == 1
         mock_open_positions.assert_called_once_with(account_number="IRA123")
         mock_symbol.assert_called_once_with("https://instrument/hims/")
